@@ -64,6 +64,13 @@ export interface Clip {
   textConfig?: TextConfig;
   effects: Effect[];
   transitions: Transition[];
+  audioFadeIn?: number; // in seconds
+  audioFadeOut?: number; // in seconds
+  audioEqPreset?: 'flat' | 'bass-boost' | 'vocal-booster' | 'treble-boost';
+  audioDucking?: boolean;
+  textAnimation?: 'none' | 'fade' | 'zoom' | 'slide' | 'typewriter';
+  textAnimationDuration?: number;
+  lutPreset?: 'none' | 'cinematic' | 'cyberpunk' | 'warm-sunset' | 'cold-winter' | 'sepia' | 'noir';
 }
 
 export interface Track {
@@ -108,7 +115,7 @@ export interface AIConfig {
 }
 
 export interface ProjectSettings {
-  resolution: '1920x1080' | '1080x1920' | '1080x1080' | '1280x720';
+  resolution: '1920x1080' | '1080x1920' | '1080x1080' | '1280x720' | '2560x1080' | '1080x2560';
   fps: number;
   theme: 'dark' | 'light';
   autosave: boolean;

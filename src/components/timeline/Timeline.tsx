@@ -1,6 +1,6 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useProjectStore } from '../../store/projectStore';
-import type { Track, Clip } from '../../types';
+import type { Track, Clip, MediaType, MediaItem } from '../../types';
 import { 
   Scissors, Trash2, Copy, ZoomIn, ZoomOut, 
   Lock, Unlock, Volume2, VolumeX, Eye, EyeOff, Plus
@@ -8,14 +8,33 @@ import {
 
 export const Timeline: React.FC = () => {
   const { 
-    tracks, currentTime, duration, zoomLevel, selectedClipId,
+    tracks, currentTime, duration, zoomLevel, selectedClipId, media,
     setCurrentTime, setZoomLevel, setSelectedClipId, splitClip, 
-    duplicateClip, removeClip, updateClip, addTrack,
-    toggleLockTrack, toggleMuteTrack, toggleHideTrack
+    duplicateClip, removeClip, updateClip, addTrack, addMediaItem, addClipToTrack,
+    toggleLockTrack, toggleMuteTrack, toggleHideTrack, detachAudio
   } = useProjectStore();
 
   const rulerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Right-Click Context Menu State
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    clipId: string;
+    type: string;
+  } | null>(null);
+
+  // Drag and Drop active highlight track state
+  const [activeDragTrackId, setActiveDragTrackId] = useState<string | null>(null);
+
+  // Close context menu on click elsewhere
+  useEffect(() => {
+    const closeMenu = () => setContextMenu(null);
+    window.addEventListener('click', closeMenu);
+    return () => window.removeEventListener('click', closeMenu);
+  }, []);
 
   // Keyboard shortcuts listener
   useEffect(() => {
@@ -51,11 +70,20 @@ export const Timeline: React.FC = () => {
     setCurrentTime(clickedTime);
   };
 
+  // Timeline Scroll Zoom Handler (Ctrl + Scroll)
+  const handleTimelineWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      const zoomDelta = e.deltaY < 0 ? 5 : -5;
+      setZoomLevel(zoomLevel + zoomDelta);
+    }
+  };
+
   // Helper to render seconds markings on ruler
   const renderRulerTicks = () => {
     const ticks = [];
-    const maxSeconds = Math.max(duration + 10, 30); // Render slightly past duration
-    const spacing = zoomLevel > 60 ? 1 : zoomLevel > 30 ? 5 : 10; // Spacing of labels based on zoom
+    const maxSeconds = Math.max(duration + 10, 30);
+    const spacing = zoomLevel > 60 ? 1 : zoomLevel > 30 ? 5 : 10;
 
     for (let s = 0; s <= maxSeconds; s++) {
       const isLabeled = s % spacing === 0;
@@ -96,11 +124,9 @@ export const Timeline: React.FC = () => {
       const deltaSeconds = deltaX / zoomLevel;
       let newStart = initialStart + deltaSeconds;
 
-      // Snapping to other clips starts or ends, or playhead
-      const snapThreshold = 0.2; // 200ms threshold
+      const snapThreshold = 0.25;
       let snapped = false;
 
-      // 1. Snap to Playhead
       if (Math.abs(newStart - currentTime) < snapThreshold) {
         newStart = currentTime;
         snapped = true;
@@ -109,18 +135,15 @@ export const Timeline: React.FC = () => {
         snapped = true;
       }
 
-      // 2. Snap to other clips in all tracks
       if (!snapped) {
         for (const t of tracks) {
           for (const c of t.clips) {
             if (c.id === clip.id) continue;
-            // Snap clip start to other clip end
             if (Math.abs(newStart - (c.timelineStart + c.duration)) < snapThreshold) {
               newStart = c.timelineStart + c.duration;
               snapped = true;
               break;
             }
-            // Snap clip end to other clip start
             if (Math.abs((newStart + clip.duration) - c.timelineStart) < snapThreshold) {
               newStart = c.timelineStart - clip.duration;
               snapped = true;
@@ -144,7 +167,7 @@ export const Timeline: React.FC = () => {
     window.addEventListener('mouseup', handleMouseUp);
   };
 
-  // Trimming (Resizing) clip edges
+  // Trimming clip edges
   const handleTrimMouseDown = (e: React.MouseEvent, clip: Clip, track: Track, side: 'left' | 'side-right') => {
     if (track.isLocked) return;
     e.stopPropagation();
@@ -164,7 +187,6 @@ export const Timeline: React.FC = () => {
         let newStartTime = initialStartTime + deltaSrcSeconds;
         newStartTime = Math.max(0, newStartTime);
         
-        // Ensure clip doesn't shrink past 0.2s minimum
         if (newStartTime < initialEndTime - 0.2) {
           const actualDeltaSecs = (newStartTime - initialStartTime) / speed;
           updateClip(clip.id, {
@@ -175,10 +197,8 @@ export const Timeline: React.FC = () => {
       } else {
         const deltaSrcSeconds = deltaSeconds * speed;
         let newEndTime = initialEndTime + deltaSrcSeconds;
-        // Limit newEndTime to max media duration if possible, for images there's no cap or standard is large
-        // For simple MVP we cap it or assume standard limits
-        const clipSource = useProjectStore.getState().media.find(m => m.id === clip.sourceId);
-        const maxSrcDuration = clipSource?.duration || 3600; // default large for images
+        const clipSource = media.find(m => m.id === clip.sourceId);
+        const maxSrcDuration = clipSource?.duration || 3600;
         
         newEndTime = Math.min(maxSrcDuration, newEndTime);
 
@@ -199,11 +219,123 @@ export const Timeline: React.FC = () => {
     window.addEventListener('mouseup', handleMouseUp);
   };
 
+  // Open right-click context menu
+  const handleClipContextMenu = (e: React.MouseEvent, clip: Clip) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      clipId: clip.id,
+      type: clip.type
+    });
+  };
+
+  // Desktop drag and drop directly onto a track board
+  const handleTrackDrop = async (e: React.DragEvent, track: Track) => {
+    e.preventDefault();
+    if (track.isLocked) return;
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    const url = URL.createObjectURL(file);
+
+    let type: MediaType = 'image';
+    let category: MediaItem['category'] = 'images';
+    if (file.type.startsWith('video/')) {
+      type = 'video';
+      category = 'videos';
+    } else if (file.type.startsWith('audio/')) {
+      type = 'audio';
+      category = 'music';
+    }
+
+    let duration = 0;
+    if (type === 'video' || type === 'audio') {
+      const element = document.createElement(type === 'video' ? 'video' : 'audio');
+      element.src = url;
+      await new Promise<void>((resolve) => {
+        element.onloadedmetadata = () => {
+          duration = element.duration;
+          resolve();
+        };
+        element.onerror = () => resolve();
+      });
+    }
+
+    // Register MediaItem
+    const mediaItem: MediaItem = {
+      id: `media_${Date.now()}`,
+      name: file.name,
+      type,
+      url,
+      duration,
+      size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+      thumbnail: type === 'audio' ? 'music-placeholder' : type === 'image' ? url : '',
+      category
+    };
+    addMediaItem(mediaItem);
+
+    // Calculate drop time relative to track start
+    const rect = e.currentTarget.getBoundingClientRect();
+    const dropX = e.clientX - rect.left + e.currentTarget.scrollLeft;
+    const dropTime = Math.max(0, dropX / zoomLevel);
+
+    const clipDuration = type === 'image' ? 5 : duration;
+
+    addClipToTrack(track.id, {
+      id: `clip_${Date.now()}`,
+      type,
+      sourceId: mediaItem.id,
+      startTime: 0,
+      endTime: clipDuration,
+      timelineStart: dropTime,
+      duration: clipDuration,
+      position: { x: 0, y: 0 },
+      scale: 1,
+      rotation: 0,
+      opacity: 1,
+      volume: 1,
+      speed: 1,
+      colorFilters: { brightness: 1, contrast: 1, saturation: 1 },
+      effects: [],
+      transitions: [],
+      audioFadeIn: 0,
+      audioFadeOut: 0
+    });
+  };
+
+  // Render a visual procedural waveform
+  const renderWaveform = (clipId: string) => {
+    const bars = [];
+    const count = 36;
+    for (let i = 0; i < count; i++) {
+      const charCode = clipId.charCodeAt(i % clipId.length) || 45;
+      const height = Math.abs(Math.sin(i * 0.35) * (charCode % 12)) + 3;
+      bars.push(
+        <div 
+          key={i} 
+          className="w-[1.5px] bg-cyan-400/40 rounded-full" 
+          style={{ height: `${height * 6}%` }}
+        />
+      );
+    }
+    return (
+      <div className="absolute inset-0 flex items-center justify-between px-2 pointer-events-none opacity-40">
+        {bars}
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-full flex-col bg-slate-900 border-t border-slate-800">
       
       {/* Timeline Controls Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-850 bg-slate-950/40">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-855 bg-slate-950/40">
         <div className="flex items-center gap-2">
           {/* Split button */}
           <button
@@ -237,6 +369,20 @@ export const Timeline: React.FC = () => {
             <Trash2 size={12} />
             Eliminar
           </button>
+
+          {/* Detach audio */}
+          {selectedClipId && (
+            <>
+              <div className="h-4 w-[1px] bg-slate-850 mx-1"></div>
+              <button
+                onClick={() => detachAudio(selectedClipId)}
+                className="flex items-center gap-1 rounded bg-indigo-950/30 border border-indigo-900/50 px-2.5 py-1 text-[11px] font-semibold text-indigo-300 hover:bg-indigo-900/40 transition-colors"
+                title="Separar la pista de audio de este video"
+              >
+                Separar Audio
+              </button>
+            </>
+          )}
 
           {/* Add Track */}
           <div className="h-4 w-[1px] bg-slate-850 mx-1"></div>
@@ -281,7 +427,6 @@ export const Timeline: React.FC = () => {
         
         {/* Track Headers (Left sidebar) */}
         <div className="w-48 bg-slate-950 border-r border-slate-850 flex-shrink-0 z-20 select-none">
-          {/* Top header corner spacer */}
           <div className="h-8 border-b border-slate-850 bg-slate-950/70"></div>
           
           {tracks.map(track => (
@@ -289,28 +434,28 @@ export const Timeline: React.FC = () => {
               key={track.id} 
               className="h-14 border-b border-slate-850 p-2 flex flex-col justify-between"
             >
-              <span className="text-[10px] font-semibold text-slate-300 truncate" title={track.name}>
+              <span className="text-[10px] font-semibold text-slate-350 truncate" title={track.name}>
                 {track.name}
               </span>
               <div className="flex gap-2 text-slate-500">
                 <button 
                   onClick={() => toggleLockTrack(track.id)} 
                   className={`hover:text-slate-200 ${track.isLocked ? 'text-indigo-400' : ''}`}
-                  title={track.isLocked ? "Desbloquear pista" : "Bloquear pista"}
+                  title={track.isLocked ? "Desbloquear" : "Bloquear"}
                 >
                   {track.isLocked ? <Lock size={10} /> : <Unlock size={10} />}
                 </button>
                 <button 
                   onClick={() => toggleMuteTrack(track.id)} 
                   className={`hover:text-slate-200 ${track.isMuted ? 'text-red-400' : ''}`}
-                  title={track.isMuted ? "Activar sonido" : "Silenciar pista"}
+                  title={track.isMuted ? "Activar sonido" : "Silenciar"}
                 >
                   {track.isMuted ? <VolumeX size={10} /> : <Volume2 size={10} />}
                 </button>
                 <button 
                   onClick={() => toggleHideTrack(track.id)} 
                   className={`hover:text-slate-200 ${track.isHidden ? 'text-amber-400' : ''}`}
-                  title={track.isHidden ? "Mostrar pista" : "Ocultar pista"}
+                  title={track.isHidden ? "Mostrar" : "Ocultar"}
                 >
                   {track.isHidden ? <EyeOff size={10} /> : <Eye size={10} />}
                 </button>
@@ -322,8 +467,8 @@ export const Timeline: React.FC = () => {
         {/* Tracks Content (Scrollable timeline area) */}
         <div 
           className="flex-1 overflow-x-auto relative"
+          onWheel={handleTimelineWheel}
           onScroll={(e) => {
-            // Sync horizontal scroll of headers & ruler if necessary
             if (rulerRef.current) {
               rulerRef.current.scrollLeft = (e.target as HTMLDivElement).scrollLeft;
             }
@@ -349,26 +494,47 @@ export const Timeline: React.FC = () => {
             {tracks.map(track => (
               <div 
                 key={track.id} 
-                className={`h-14 border-b border-slate-850/50 relative flex items-center ${
-                  track.isLocked ? 'bg-slate-950/20' : ''
-                } ${track.isHidden ? 'opacity-50' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (!track.isLocked && activeDragTrackId !== track.id) {
+                    setActiveDragTrackId(track.id);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (activeDragTrackId === track.id) {
+                    setActiveDragTrackId(null);
+                  }
+                }}
+                onDrop={(e) => {
+                  setActiveDragTrackId(null);
+                  handleTrackDrop(e, track);
+                }}
+                className={`h-14 border-b border-slate-850/50 relative flex items-center transition-all ${
+                  track.isLocked ? 'bg-slate-955/20' : ''
+                } ${track.isHidden ? 'opacity-50' : ''} ${
+                  activeDragTrackId === track.id 
+                    ? 'bg-indigo-500/10 border-indigo-500/50 border-dashed border-y' 
+                    : ''
+                }`}
               >
                 {/* Clips in this track */}
                 {track.clips.map(clip => {
                   const isSelected = selectedClipId === clip.id;
+                  const source = media.find(m => m.id === clip.sourceId);
                   
                   return (
                     <div
                       key={clip.id}
                       onMouseDown={(e) => handleClipMouseDown(e, clip, track)}
+                      onContextMenu={(e) => handleClipContextMenu(e, clip)}
                       className={`absolute h-10 rounded border text-left flex items-center justify-between overflow-hidden cursor-grab active:cursor-grabbing select-none ${
                         isSelected 
-                          ? 'border-indigo-400 bg-indigo-600/35 text-white ring-1 ring-indigo-500' 
+                          ? 'border-indigo-400 bg-indigo-650/40 text-white ring-1 ring-indigo-500' 
                           : track.type === 'text' 
-                          ? 'border-amber-700/60 bg-amber-500/20 text-amber-200'
+                          ? 'border-amber-700/60 bg-amber-500/20 text-amber-200 hover:border-amber-500'
                           : track.type === 'audio'
-                          ? 'border-cyan-700/60 bg-cyan-500/20 text-cyan-200'
-                          : 'border-emerald-700/60 bg-emerald-500/20 text-emerald-200'
+                          ? 'border-cyan-700/60 bg-cyan-550/20 text-cyan-200 hover:border-cyan-550'
+                          : 'border-emerald-700/60 bg-emerald-500/20 text-emerald-250 hover:border-emerald-500'
                       }`}
                       style={{
                         left: `${clip.timelineStart * zoomLevel}px`,
@@ -379,22 +545,52 @@ export const Timeline: React.FC = () => {
                       {!track.isLocked && (
                         <div 
                           onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'left')}
-                          className="w-1.5 h-full bg-slate-400/20 hover:bg-slate-400/60 cursor-col-resize flex-shrink-0 transition-colors"
-                          title="Recortar inicio"
+                          className="w-1.5 h-full bg-slate-400/20 hover:bg-slate-400/60 cursor-col-resize flex-shrink-0 transition-colors z-10"
                         />
                       )}
 
+                      {/* Render Audio Waveform inside audio clip */}
+                      {track.type === 'audio' && renderWaveform(clip.id)}
+
                       {/* Clip label info */}
-                      <div className="flex-1 px-1.5 truncate text-[9px] pointer-events-none font-semibold">
-                        {clip.type === 'text' ? `Text: ${clip.textConfig?.text || 'Empty'}` : clip.id.substring(0, 8)}
+                      <div className="flex-1 px-1.5 truncate text-[9px] pointer-events-none font-semibold z-10 pr-20">
+                        {clip.type === 'text' 
+                          ? `Text: ${clip.textConfig?.text || 'Empty'}` 
+                          : `${source?.name || 'Clip'} (${clip.duration.toFixed(1)}s)`
+                        }
+                        {clip.volume === 0 && (
+                          <span className="ml-1 text-[8px] text-red-400 font-bold">[MUTED]</span>
+                        )}
                       </div>
+
+                      {/* Direct volume controls inside audio timeline clips */}
+                      {track.type === 'audio' && clip.duration * zoomLevel > 80 && (
+                        <div 
+                          className="absolute bottom-0.5 right-1.5 flex items-center gap-1 bg-slate-950/85 px-1 py-0.5 rounded border border-slate-700/40 z-20 pointer-events-auto"
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          <Volume2 size={8} className="text-cyan-400" />
+                          <input
+                            type="range"
+                            min="0"
+                            max="1.5"
+                            step="0.05"
+                            value={clip.volume ?? 1}
+                            onChange={(e) => updateClip(clip.id, { volume: parseFloat(e.target.value) })}
+                            className="w-10 h-0.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                            title={`Volumen: ${Math.round((clip.volume ?? 1) * 100)}%`}
+                          />
+                          <span className="text-[7px] text-cyan-300 font-mono w-5 text-right select-none">
+                            {Math.round((clip.volume ?? 1) * 100)}%
+                          </span>
+                        </div>
+                      )}
 
                       {/* Right Trim Handle */}
                       {!track.isLocked && (
                         <div 
                           onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'side-right')}
-                          className="w-1.5 h-full bg-slate-400/20 hover:bg-slate-400/60 cursor-col-resize flex-shrink-0 transition-colors"
-                          title="Recortar final"
+                          className="w-1.5 h-full bg-slate-400/20 hover:bg-slate-400/60 cursor-col-resize flex-shrink-0 transition-colors z-10"
                         />
                       )}
                     </div>
@@ -416,6 +612,61 @@ export const Timeline: React.FC = () => {
         </div>
 
       </div>
+
+      {/* 5. CUSTOM RIGHT-CLICK CONTEXT MENU */}
+      {contextMenu && contextMenu.visible && (
+        <div 
+          className="fixed z-50 w-44 rounded-lg border border-slate-700 bg-slate-900 shadow-xl overflow-hidden py-1 text-slate-250 select-none text-xs"
+          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+        >
+          <button 
+            onClick={() => {
+              splitClip(contextMenu.clipId, currentTime);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-slate-800 hover:text-white flex justify-between"
+          >
+            <span>Dividir Clip</span>
+            <span className="text-[10px] text-slate-500">S</span>
+          </button>
+          
+          <button 
+            onClick={() => {
+              duplicateClip(contextMenu.clipId);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-slate-800 hover:text-white flex justify-between"
+          >
+            <span>Duplicar Clip</span>
+            <span className="text-[10px] text-slate-500">Ctrl+D</span>
+          </button>
+
+          {contextMenu.type === 'video' && (
+            <button 
+              onClick={() => {
+                detachAudio(contextMenu.clipId);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 hover:bg-indigo-950/45 hover:text-indigo-300 border-t border-slate-850/50"
+            >
+              Separar Audio (Detach)
+            </button>
+          )}
+
+          <button 
+            onClick={() => {
+              removeClip(contextMenu.clipId);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-red-950/30 hover:text-red-400 border-t border-slate-850/50 flex justify-between"
+          >
+            <span>Eliminar Clip</span>
+            <span className="text-[10px] text-red-500">Del</span>
+          </button>
+        </div>
+      )}
+
     </div>
   );
 };
+export default Timeline;

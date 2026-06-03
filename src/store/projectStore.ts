@@ -51,6 +51,7 @@ interface ProjectState {
   updateClip: (clipId: string, updates: Partial<Clip>) => void;
   splitClip: (clipId: string, time: number) => void;
   duplicateClip: (clipId: string) => void;
+  detachAudio: (clipId: string) => void;
   
   // Subtitle actions
   addSubtitle: (sub: Subtitle) => void;
@@ -391,6 +392,65 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       tracks: updatedTracks,
       duration: getProjectDuration(updatedTracks),
       selectedClipId: duplicate.id
+    };
+  }),
+  
+  detachAudio: (clipId) => set((state) => {
+    pushToHistory(state.tracks, state.subtitles);
+    const targetTrack = state.tracks.find(t => t.clips.some(c => c.id === clipId));
+    const videoClip = targetTrack?.clips.find(c => c.id === clipId);
+    
+    if (!videoClip || videoClip.type !== 'video' || !targetTrack) return {};
+
+    // Find or create an audio track
+    let audioTrack = state.tracks.find(t => t.type === 'audio' && !t.isLocked);
+    if (!audioTrack) {
+      audioTrack = state.tracks.filter(t => t.type === 'audio')[0];
+    }
+    
+    if (!audioTrack) return {};
+
+    const audioClip: Clip = {
+      id: `clip_detached_audio_${Date.now()}`,
+      type: 'audio',
+      sourceId: videoClip.sourceId,
+      trackId: audioTrack.id,
+      startTime: videoClip.startTime,
+      endTime: videoClip.endTime,
+      timelineStart: videoClip.timelineStart,
+      duration: videoClip.duration,
+      position: { x: 0, y: 0 },
+      scale: 1,
+      rotation: 0,
+      opacity: 1,
+      volume: videoClip.volume || 1,
+      speed: videoClip.speed,
+      colorFilters: { brightness: 1, contrast: 1, saturation: 1 },
+      effects: [],
+      transitions: [],
+      audioFadeIn: 0,
+      audioFadeOut: 0
+    };
+
+    const updatedTracks = state.tracks.map(t => {
+      if (t.id === targetTrack.id) {
+        return {
+          ...t,
+          clips: t.clips.map(c => c.id === clipId ? { ...c, volume: 0 } : c)
+        };
+      }
+      if (t.id === audioTrack!.id) {
+        return {
+          ...t,
+          clips: [...t.clips, audioClip]
+        };
+      }
+      return t;
+    });
+
+    return {
+      tracks: updatedTracks,
+      selectedClipId: audioClip.id
     };
   }),
   
