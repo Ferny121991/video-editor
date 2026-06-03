@@ -119,7 +119,13 @@ const initialSettings: ProjectSettings = {
   theme: 'dark',
   autosave: true,
   autosaveInterval: 5,
-  confirmDelete: true
+  confirmDelete: true,
+  snappingEnabled: true,
+  rippleEditEnabled: false,
+  autoScrollPlayhead: true,
+  loopPlayback: false,
+  gridOverlay: 'none',
+  markers: []
 };
 
 const defaultTracks = (): Track[] => [

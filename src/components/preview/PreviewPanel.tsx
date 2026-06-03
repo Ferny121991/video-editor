@@ -9,7 +9,7 @@ interface PreviewPanelProps {
 
 export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
   const { 
-    isPlaying, currentTime, duration, tracks, subtitles, resolution, resolutionName, updateSettings,
+    isPlaying, currentTime, duration, tracks, subtitles, resolution, resolutionName, updateSettings, settings,
     setPlaying, setCurrentTime
   } = useProjectStore();
 
@@ -548,6 +548,46 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
 
       ctx.fillStyle = sub.style.color || '#ffffff';
       ctx.fillText(sub.text, canvas.width / 2, yOffset + textH / 3);
+
+      ctx.restore();
+    }
+
+    // 4. Render Pro Composition Grid Overlays
+    const grid = settings.gridOverlay || 'none';
+    if (grid !== 'none') {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 5]);
+
+      if (grid === 'thirds') {
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 3, 0);
+        ctx.lineTo(canvas.width / 3, canvas.height);
+        ctx.moveTo((canvas.width / 3) * 2, 0);
+        ctx.lineTo((canvas.width / 3) * 2, canvas.height);
+        ctx.moveTo(0, canvas.height / 3);
+        ctx.lineTo(canvas.width, canvas.height / 3);
+        ctx.moveTo(0, (canvas.height / 3) * 2);
+        ctx.lineTo(canvas.width, (canvas.height / 3) * 2);
+        ctx.stroke();
+      } else if (grid === 'crosshair') {
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, canvas.height / 2 - 30);
+        ctx.lineTo(canvas.width / 2, canvas.height / 2 + 30);
+        ctx.moveTo(canvas.width / 2 - 30, canvas.height / 2);
+        ctx.lineTo(canvas.width / 2 + 30, canvas.height / 2);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, canvas.height / 2, 5, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (grid === 'safe-area') {
+        ctx.beginPath();
+        ctx.rect(canvas.width * 0.05, canvas.height * 0.05, canvas.width * 0.9, canvas.height * 0.9);
+        ctx.rect(canvas.width * 0.1, canvas.height * 0.1, canvas.width * 0.8, canvas.height * 0.8);
+        ctx.stroke();
+      }
 
       ctx.restore();
     }

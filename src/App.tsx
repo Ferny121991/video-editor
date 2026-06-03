@@ -58,46 +58,6 @@ function App() {
           return null;
         })}
 
-        {/* Media library items preview instantiation */}
-        {media.map((item) => {
-          if (item.type === 'video') {
-            return (
-              <video
-                key={`preview-${item.id}`}
-                id={`media-element-preview-${item.id}`}
-                src={item.url}
-                className="hidden-media"
-                preload="auto"
-                playsInline
-                muted={false}
-                crossOrigin="anonymous"
-              />
-            );
-          } else if (item.type === 'audio') {
-            return (
-              <audio
-                key={`preview-${item.id}`}
-                id={`media-element-preview-${item.id}`}
-                src={item.url}
-                className="hidden-media"
-                preload="auto"
-                crossOrigin="anonymous"
-              />
-            );
-          } else if (item.type === 'image') {
-            return (
-              <img
-                key={`preview-${item.id}`}
-                id={`media-element-preview-${item.id}`}
-                src={item.url}
-                className="hidden-media"
-                alt={item.name}
-                crossOrigin="anonymous"
-              />
-            );
-          }
-          return null;
-        })}
       </div>
 
     </div>

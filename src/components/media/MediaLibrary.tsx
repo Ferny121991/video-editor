@@ -78,8 +78,7 @@ export const MediaLibrary: React.FC = () => {
   };
 
   const processUploadedFiles = async (files: FileList) => {
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    const promises = Array.from(files).map(async (file, i) => {
       const url = URL.createObjectURL(file);
       
       let type: MediaType = 'image';
@@ -124,7 +123,9 @@ export const MediaLibrary: React.FC = () => {
       };
 
       addMediaItem(mediaItem);
-    }
+    });
+
+    await Promise.all(promises);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

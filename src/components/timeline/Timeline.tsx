@@ -8,7 +8,7 @@ import {
 
 export const Timeline: React.FC = () => {
   const { 
-    tracks, currentTime, duration, zoomLevel, selectedClipId, media,
+    tracks, currentTime, duration, zoomLevel, selectedClipId, media, settings,
     setCurrentTime, setZoomLevel, setSelectedClipId, splitClip, 
     duplicateClip, removeClip, updateClip, addTrack, addMediaItem, addClipToTrack,
     toggleLockTrack, toggleMuteTrack, toggleHideTrack, detachAudio,
@@ -657,6 +657,22 @@ export const Timeline: React.FC = () => {
           >
             <div className="relative h-full" style={{ width: `${Math.max(duration + 10, 30) * zoomLevel}px` }}>
               {renderRulerTicks()}
+              {settings.markers?.map((marker, idx) => (
+                <div 
+                  key={idx}
+                  className="absolute w-2.5 h-2.5 bg-cyan-400 rotate-45 cursor-pointer z-20 hover:bg-white transition-colors"
+                  style={{ 
+                    left: `${marker * zoomLevel}px`,
+                    marginLeft: '-5px',
+                    top: '18px'
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCurrentTime(marker);
+                  }}
+                  title={`Marcador a los ${marker.toFixed(1)}s (Clic para saltar)`}
+                />
+              ))}
             </div>
           </div>
 

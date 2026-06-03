@@ -7,6 +7,7 @@ import { PreviewPanel } from '../preview/PreviewPanel';
 import { AiTools } from '../ai/AiTools';
 import { EffectsLibrary } from '../effects/EffectsLibrary';
 import { TransitionsLibrary } from '../transitions/TransitionsLibrary';
+import { ProToolbox } from '../toolbox/ProToolbox';
 import { SettingsModal } from '../settings/SettingsModal';
 import { ExportModal } from '../export/ExportModal';
 import { 
@@ -23,7 +24,7 @@ export const Layout: React.FC<LayoutProps> = ({ canvasRef }) => {
     projectName, undo, redo, loadProject, saveProject, newProject
   } = useProjectStore();
 
-  const [activeLeftPanel, setActiveLeftPanel] = useState<'media' | 'ai' | 'effects' | 'transitions'>('media');
+  const [activeLeftPanel, setActiveLeftPanel] = useState<'media' | 'ai' | 'effects' | 'transitions' | 'toolbox'>('media');
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
 
@@ -184,12 +185,12 @@ export const Layout: React.FC<LayoutProps> = ({ canvasRef }) => {
       {/* 2. MAIN CONTENT AREA */}
       <main className="flex flex-1 w-full overflow-hidden select-none">
         
-        {/* Left Side: Media Library, Effects, Transitions, or AI Tools */}
+        {/* Left Side: Media Library, Effects, Transitions, Toolbox, or AI Tools */}
         <section className="w-80 h-full border-r border-slate-900 flex-shrink-0 flex flex-col bg-slate-900">
-          <div className="flex border-b border-slate-850 bg-slate-950/20">
+          <div className="flex border-b border-slate-850 bg-slate-950/20 overflow-x-auto scrollbar-none">
             <button
               onClick={() => setActiveLeftPanel('media')}
-              className={`flex-1 text-center py-2 text-[10px] sm:text-xs font-semibold transition-all border-b-2 ${
+              className={`flex-shrink-0 px-2.5 py-2 text-[10px] sm:text-[11px] font-bold transition-all border-b-2 ${
                 activeLeftPanel === 'media' 
                   ? 'text-indigo-400 border-indigo-500 bg-slate-850/30' 
                   : 'text-slate-400 border-transparent hover:text-slate-200'
@@ -200,7 +201,7 @@ export const Layout: React.FC<LayoutProps> = ({ canvasRef }) => {
             </button>
             <button
               onClick={() => setActiveLeftPanel('effects')}
-              className={`flex-1 text-center py-2 text-[10px] sm:text-xs font-semibold transition-all border-b-2 ${
+              className={`flex-shrink-0 px-2.5 py-2 text-[10px] sm:text-[11px] font-bold transition-all border-b-2 ${
                 activeLeftPanel === 'effects' 
                   ? 'text-indigo-400 border-indigo-500 bg-slate-850/30' 
                   : 'text-slate-400 border-transparent hover:text-slate-200'
@@ -211,7 +212,7 @@ export const Layout: React.FC<LayoutProps> = ({ canvasRef }) => {
             </button>
             <button
               onClick={() => setActiveLeftPanel('transitions')}
-              className={`flex-1 text-center py-2 text-[10px] sm:text-xs font-semibold transition-all border-b-2 ${
+              className={`flex-shrink-0 px-2.5 py-2 text-[10px] sm:text-[11px] font-bold transition-all border-b-2 ${
                 activeLeftPanel === 'transitions' 
                   ? 'text-indigo-400 border-indigo-500 bg-slate-850/30' 
                   : 'text-slate-400 border-transparent hover:text-slate-200'
@@ -221,8 +222,19 @@ export const Layout: React.FC<LayoutProps> = ({ canvasRef }) => {
               Transiciones
             </button>
             <button
+              onClick={() => setActiveLeftPanel('toolbox')}
+              className={`flex-shrink-0 px-2.5 py-2 text-[10px] sm:text-[11px] font-bold transition-all border-b-2 ${
+                activeLeftPanel === 'toolbox' 
+                  ? 'text-indigo-400 border-indigo-500 bg-slate-850/30' 
+                  : 'text-slate-400 border-transparent hover:text-slate-200'
+              }`}
+              title="Herramientas avanzadas de edición y presets"
+            >
+              Herramientas
+            </button>
+            <button
               onClick={() => setActiveLeftPanel('ai')}
-              className={`flex-1 text-center py-2 text-[10px] sm:text-xs font-semibold transition-all border-b-2 ${
+              className={`flex-shrink-0 px-2.5 py-2 text-[10px] sm:text-[11px] font-bold transition-all border-b-2 ${
                 activeLeftPanel === 'ai' 
                   ? 'text-indigo-400 border-indigo-500 bg-slate-850/30' 
                   : 'text-slate-400 border-transparent hover:text-slate-200'
@@ -236,6 +248,7 @@ export const Layout: React.FC<LayoutProps> = ({ canvasRef }) => {
             {activeLeftPanel === 'media' && <MediaLibrary />}
             {activeLeftPanel === 'effects' && <EffectsLibrary />}
             {activeLeftPanel === 'transitions' && <TransitionsLibrary />}
+            {activeLeftPanel === 'toolbox' && <ProToolbox />}
             {activeLeftPanel === 'ai' && <AiTools />}
           </div>
         </section>

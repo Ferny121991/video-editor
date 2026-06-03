@@ -73,6 +73,12 @@ export interface Clip {
   lutPreset?: 'none' | 'cinematic' | 'cyberpunk' | 'warm-sunset' | 'cold-winter' | 'sepia' | 'noir';
   audioKeyframes?: Array<{ id: string; time: number; volume: number }>;
   keyframes?: PropertyKeyframe[];
+  // Pro toolbox controls
+  voiceChanger?: 'none' | 'robot' | 'chipmunk' | 'echo' | 'radio' | 'deep';
+  noiseReduction?: boolean;
+  pitchControl?: number; // -12 to 12
+  stereoPanning?: number; // -1 to 1 (left/right)
+  easeCurve?: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
 }
 
 export interface PropertyKeyframe {
@@ -133,6 +139,13 @@ export interface ProjectSettings {
   autosave: boolean;
   autosaveInterval: number; // in minutes
   confirmDelete: boolean;
+  // Pro toolbox settings
+  snappingEnabled?: boolean;
+  rippleEditEnabled?: boolean;
+  autoScrollPlayhead?: boolean;
+  loopPlayback?: boolean;
+  gridOverlay?: 'none' | 'thirds' | 'crosshair' | 'safe-area';
+  markers?: number[];
 }
 
 export interface Project {
