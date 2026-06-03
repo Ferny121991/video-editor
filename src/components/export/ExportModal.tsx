@@ -50,7 +50,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, canva
       tracks.forEach(track => {
         if (track.type === 'audio' && !track.isMuted) {
           track.clips.forEach(clip => {
-            const el = document.getElementById(`media-element-${clip.sourceId}`) as HTMLAudioElement;
+            const el = document.getElementById(`media-element-${clip.id}`) as HTMLAudioElement;
             if (el) {
               try {
                 const source = audioCtx.createMediaElementSource(el);

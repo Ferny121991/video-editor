@@ -57,7 +57,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
     tracks.forEach(track => {
       const clip = track.clips.find(c => c.timelineStart <= time && time <= c.timelineStart + c.duration);
       if (clip && (clip.type === 'video' || clip.type === 'audio')) {
-        const el = document.getElementById(`media-element-${clip.sourceId}`) as HTMLMediaElement;
+        const el = document.getElementById(`media-element-${clip.id}`) as HTMLMediaElement;
         if (el) {
           const targetVol = getInterpolatedVolume(clip, time);
           el.muted = track.isMuted || targetVol === 0;
@@ -150,7 +150,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
       if (track.isMuted) return;
       const clip = track.clips.find(c => c.timelineStart <= storeTime && storeTime <= c.timelineStart + c.duration);
       if (clip && (clip.type === 'video' || clip.type === 'audio')) {
-        const el = document.getElementById(`media-element-${clip.sourceId}`) as HTMLMediaElement;
+        const el = document.getElementById(`media-element-${clip.id}`) as HTMLMediaElement;
         if (el && el.paused) {
           const targetVol = getInterpolatedVolume(clip, storeTime);
           el.volume = Math.max(0, Math.min(1, targetVol * (track.isMuted ? 0 : 1)));
@@ -269,7 +269,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
       ctx.scale(customScale, customScale);
 
       if (clip.type === 'video' || clip.type === 'image') {
-        const mediaEl = document.getElementById(`media-element-${clip.sourceId}`) as HTMLImageElement | HTMLVideoElement;
+        const mediaEl = document.getElementById(`media-element-${clip.id}`) as HTMLImageElement | HTMLVideoElement;
         
         if (mediaEl) {
           if (clip.type === 'video') {
