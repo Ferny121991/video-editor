@@ -11,7 +11,8 @@ export const Timeline: React.FC = () => {
     tracks, currentTime, duration, zoomLevel, selectedClipId, media,
     setCurrentTime, setZoomLevel, setSelectedClipId, splitClip, 
     duplicateClip, removeClip, updateClip, addTrack, addMediaItem, addClipToTrack,
-    toggleLockTrack, toggleMuteTrack, toggleHideTrack, detachAudio
+    toggleLockTrack, toggleMuteTrack, toggleHideTrack, detachAudio,
+    addAudioKeyframe, updateAudioKeyframe, removeAudioKeyframe
   } = useProjectStore();
 
   const rulerRef = useRef<HTMLDivElement>(null);
@@ -60,6 +61,77 @@ export const Timeline: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedClipId, currentTime]);
+
+  // Filmora-style Audio volume envelope keyframe helpers
+  const getKeyframePathPoints = (clip: Clip) => {
+    const kfs = [...(clip.audioKeyframes || [])].sort((a, b) => a.time - b.time);
+    if (kfs.length === 0) {
+      const yPercent = (1 - ((clip.volume ?? 1) / 1.5)) * 100;
+      return `0,${yPercent} 100,${yPercent}`;
+    }
+    
+    const points = [];
+    const firstY = (1 - (kfs[0].volume / 1.5)) * 100;
+    points.push(`0,${firstY}`);
+    
+    kfs.forEach(kf => {
+      const x = (kf.time / clip.duration) * 100;
+      const y = (1 - (kf.volume / 1.5)) * 100;
+      points.push(`${x},${y}`);
+    });
+    
+    const lastY = (1 - (kfs[kfs.length - 1].volume / 1.5)) * 100;
+    points.push(`100,${lastY}`);
+    
+    return points.join(' ');
+  };
+
+  const handleKeyframeMouseDown = (
+    e: React.MouseEvent, 
+    clipId: string, 
+    kf: { id: string; time: number; volume: number }
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    const startY = e.clientY;
+    const startX = e.clientX;
+    const initialVolume = kf.volume;
+    const initialTime = kf.time;
+    
+    const clipContainer = document.getElementById(`clip-container-${clipId}`);
+    if (!clipContainer) return;
+    
+    const rect = clipContainer.getBoundingClientRect();
+    const clipWidth = rect.width;
+    const clipHeight = rect.height;
+    
+    const clip = tracks.flatMap(t => t.clips).find(c => c.id === clipId);
+    if (!clip) return;
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = moveEvent.clientY - startY;
+      const deltaX = moveEvent.clientX - startX;
+      
+      const volumeDelta = -(deltaY / clipHeight) * 1.5;
+      let newVolume = initialVolume + volumeDelta;
+      newVolume = Math.max(0, Math.min(1.5, newVolume));
+      
+      const timeDelta = (deltaX / clipWidth) * clip.duration;
+      let newTime = initialTime + timeDelta;
+      newTime = Math.max(0, Math.min(clip.duration, newTime));
+      
+      updateAudioKeyframe(clipId, kf.id, { volume: newVolume, time: newTime });
+    };
+    
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
 
   // Handle click on timeline ruler to seek playhead
   const handleRulerClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -524,8 +596,21 @@ export const Timeline: React.FC = () => {
                   
                   return (
                     <div
+                      id={`clip-container-${clip.id}`}
                       key={clip.id}
-                      onMouseDown={(e) => handleClipMouseDown(e, clip, track)}
+                      onMouseDown={(e) => {
+                        if (track.type === 'audio' && (e.altKey || e.ctrlKey)) {
+                          e.stopPropagation();
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const clickX = e.clientX - rect.left;
+                          const clickY = e.clientY - rect.top;
+                          const relativeTime = (clickX / rect.width) * clip.duration;
+                          const volume = (1 - (clickY / rect.height)) * 1.5;
+                          addAudioKeyframe(clip.id, Math.max(0, Math.min(clip.duration, relativeTime)), Math.max(0, Math.min(1.5, volume)));
+                          return;
+                        }
+                        handleClipMouseDown(e, clip, track);
+                      }}
                       onContextMenu={(e) => handleClipContextMenu(e, clip)}
                       className={`absolute h-10 rounded border text-left flex items-center justify-between overflow-hidden cursor-grab active:cursor-grabbing select-none ${
                         isSelected 
@@ -540,6 +625,7 @@ export const Timeline: React.FC = () => {
                         left: `${clip.timelineStart * zoomLevel}px`,
                         width: `${clip.duration * zoomLevel}px`,
                       }}
+                      title={track.type === 'audio' ? "Alt + Clic para añadir puntos de volumen (Keyframes)" : undefined}
                     >
                       {/* Left Trim Handle */}
                       {!track.isLocked && (
@@ -563,26 +649,35 @@ export const Timeline: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Direct volume controls inside audio timeline clips */}
-                      {track.type === 'audio' && clip.duration * zoomLevel > 80 && (
-                        <div 
-                          className="absolute bottom-0.5 right-1.5 flex items-center gap-1 bg-slate-950/85 px-1 py-0.5 rounded border border-slate-700/40 z-20 pointer-events-auto"
-                          onMouseDown={(e) => e.stopPropagation()}
-                        >
-                          <Volume2 size={8} className="text-cyan-400" />
-                          <input
-                            type="range"
-                            min="0"
-                            max="1.5"
-                            step="0.05"
-                            value={clip.volume ?? 1}
-                            onChange={(e) => updateClip(clip.id, { volume: parseFloat(e.target.value) })}
-                            className="w-10 h-0.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-                            title={`Volumen: ${Math.round((clip.volume ?? 1) * 100)}%`}
-                          />
-                          <span className="text-[7px] text-cyan-300 font-mono w-5 text-right select-none">
-                            {Math.round((clip.volume ?? 1) * 100)}%
-                          </span>
+                      {/* Direct volume controls inside audio timeline clips - Filmora style volume line */}
+                      {track.type === 'audio' && (
+                        <div className="absolute inset-0 w-full h-full pointer-events-none z-20">
+                          <svg className="absolute inset-0 w-full h-full">
+                            <polyline
+                              fill="none"
+                              stroke="#22d3ee"
+                              strokeWidth="1.5"
+                              points={getKeyframePathPoints(clip)}
+                            />
+                          </svg>
+                          
+                          {/* Keyframe handle dots */}
+                          {clip.audioKeyframes?.map(kf => (
+                            <div
+                              key={kf.id}
+                              className="absolute w-2 h-2 rounded-full bg-cyan-400 border border-white cursor-ns-resize -ml-1 -mt-1 hover:bg-white z-30 pointer-events-auto shadow shadow-black"
+                              style={{
+                                left: `${(kf.time / clip.duration) * 100}%`,
+                                top: `${(1 - (kf.volume / 1.5)) * 100}%`
+                              }}
+                              onMouseDown={(e) => handleKeyframeMouseDown(e, clip.id, kf)}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                removeAudioKeyframe(clip.id, kf.id);
+                              }}
+                              title={`Volumen: ${Math.round(kf.volume * 100)}% a los ${kf.time.toFixed(1)}s (Doble clic para borrar)`}
+                            />
+                          ))}
                         </div>
                       )}
 

@@ -13,7 +13,7 @@ function App() {
       <Layout canvasRef={canvasRef} />
 
       {/* Hidden container storing real media DOM elements for HTML5 Canvas rendering & audio mixing */}
-      <div id="hidden-media-registry" className="hidden pointer-events-none absolute w-0 h-0 overflow-hidden">
+      <div id="hidden-media-registry" className="pointer-events-none absolute w-[1px] h-[1px] -left-[9999px] -top-[9999px] opacity-0 overflow-hidden">
         {media.map((item) => {
           if (item.type === 'video') {
             return (

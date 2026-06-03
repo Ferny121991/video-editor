@@ -52,6 +52,9 @@ interface ProjectState {
   splitClip: (clipId: string, time: number) => void;
   duplicateClip: (clipId: string) => void;
   detachAudio: (clipId: string) => void;
+  addAudioKeyframe: (clipId: string, time: number, volume: number) => void;
+  updateAudioKeyframe: (clipId: string, keyframeId: string, updates: Partial<{ time: number; volume: number }>) => void;
+  removeAudioKeyframe: (clipId: string, keyframeId: string) => void;
   
   // Subtitle actions
   addSubtitle: (sub: Subtitle) => void;
@@ -452,6 +455,74 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       tracks: updatedTracks,
       selectedClipId: audioClip.id
     };
+  }),
+
+  addAudioKeyframe: (clipId, time, volume) => set((state) => {
+    const updatedTracks = state.tracks.map(track => {
+      if (track.isLocked) return track;
+      return {
+        ...track,
+        clips: track.clips.map(clip => {
+          if (clip.id === clipId) {
+            const currentKfs = clip.audioKeyframes || [];
+            const exists = currentKfs.some(k => Math.abs(k.time - time) < 0.05);
+            if (exists) return clip;
+            
+            const newKf = { id: `kf_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, time, volume };
+            return {
+              ...clip,
+              audioKeyframes: [...currentKfs, newKf].sort((a, b) => a.time - b.time)
+            };
+          }
+          return clip;
+        })
+      };
+    });
+    return { tracks: updatedTracks };
+  }),
+
+  updateAudioKeyframe: (clipId, keyframeId, updates) => set((state) => {
+    const updatedTracks = state.tracks.map(track => {
+      if (track.isLocked) return track;
+      return {
+        ...track,
+        clips: track.clips.map(clip => {
+          if (clip.id === clipId && clip.audioKeyframes) {
+            return {
+              ...clip,
+              audioKeyframes: clip.audioKeyframes.map(kf => {
+                if (kf.id === keyframeId) {
+                  return { ...kf, ...updates };
+                }
+                return kf;
+              }).sort((a, b) => a.time - b.time)
+            };
+          }
+          return clip;
+        })
+      };
+    });
+    return { tracks: updatedTracks };
+  }),
+
+  removeAudioKeyframe: (clipId, keyframeId) => set((state) => {
+    pushToHistory(state.tracks, state.subtitles);
+    const updatedTracks = state.tracks.map(track => {
+      if (track.isLocked) return track;
+      return {
+        ...track,
+        clips: track.clips.map(clip => {
+          if (clip.id === clipId && clip.audioKeyframes) {
+            return {
+              ...clip,
+              audioKeyframes: clip.audioKeyframes.filter(kf => kf.id !== keyframeId)
+            };
+          }
+          return clip;
+        })
+      };
+    });
+    return { tracks: updatedTracks };
   }),
   
   addSubtitle: (sub) => set((state) => {

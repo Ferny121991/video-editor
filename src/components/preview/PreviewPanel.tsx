@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/projectStore';
 import { Play, Pause, RotateCcw, SkipBack, SkipForward, Maximize2, Activity } from 'lucide-react';
+import type { Clip } from '../../types';
 
 interface PreviewPanelProps {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -25,6 +26,47 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
   // Volume meter level state (jumps dynamically during playback)
   const [volumeMeterVal, setVolumeMeterVal] = useState<number>(0);
 
+  const getInterpolatedVolume = (clip: Clip, time: number): number => {
+    const relativeTime = time - clip.timelineStart;
+    const kfs = clip.audioKeyframes || [];
+    if (kfs.length === 0) return clip.volume;
+
+    const sortedKfs = [...kfs].sort((a, b) => a.time - b.time);
+
+    if (relativeTime <= sortedKfs[0].time) {
+      return sortedKfs[0].volume;
+    }
+
+    if (relativeTime >= sortedKfs[sortedKfs.length - 1].time) {
+      return sortedKfs[sortedKfs.length - 1].volume;
+    }
+
+    for (let i = 0; i < sortedKfs.length - 1; i++) {
+      const kfStart = sortedKfs[i];
+      const kfEnd = sortedKfs[i + 1];
+      if (relativeTime >= kfStart.time && relativeTime <= kfEnd.time) {
+        const t = (relativeTime - kfStart.time) / (kfEnd.time - kfStart.time);
+        return kfStart.volume + t * (kfEnd.volume - kfStart.volume);
+      }
+    }
+
+    return clip.volume;
+  };
+
+  const updateActiveMediaVolumes = (time: number) => {
+    tracks.forEach(track => {
+      const clip = track.clips.find(c => c.timelineStart <= time && time <= c.timelineStart + c.duration);
+      if (clip && (clip.type === 'video' || clip.type === 'audio')) {
+        const el = document.getElementById(`media-element-${clip.sourceId}`) as HTMLMediaElement;
+        if (el) {
+          const targetVol = getInterpolatedVolume(clip, time);
+          el.muted = track.isMuted || targetVol === 0;
+          el.volume = Math.max(0, Math.min(1, targetVol * (track.isMuted ? 0 : 1)));
+        }
+      }
+    });
+  };
+
   // Synchronize playback timers
   useEffect(() => {
     if (isPlaying) {
@@ -46,7 +88,8 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
           setMemoryUsed(prev => Math.max(90, Math.min(450, prev + (Math.random() - 0.48) * 12)));
         }
 
-        const nextTime = currentTime + deltaSeconds;
+        const storeTime = useProjectStore.getState().currentTime;
+        const nextTime = storeTime + deltaSeconds;
         
         if (nextTime >= duration) {
           setPlaying(false);
@@ -55,13 +98,16 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
           setVolumeMeterVal(0);
         } else {
           setCurrentTime(nextTime);
+          updateActiveMediaVolumes(nextTime);
           
           // Animate Audio Level Meter based on active audio clips
           let maxVolume = 0;
           tracks.forEach(track => {
             if (track.type === 'audio' && !track.isMuted) {
-              const clip = track.clips.find(c => c.timelineStart <= currentTime && currentTime <= c.timelineStart + c.duration);
-              if (clip) maxVolume = Math.max(maxVolume, clip.volume);
+              const clip = track.clips.find(c => c.timelineStart <= nextTime && nextTime <= c.timelineStart + c.duration);
+              if (clip) {
+                maxVolume = Math.max(maxVolume, getInterpolatedVolume(clip, nextTime));
+              }
             }
           });
           if (maxVolume > 0) {
@@ -99,13 +145,15 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
 
   // Helper to play active media items
   const playActiveMedia = () => {
+    const storeTime = useProjectStore.getState().currentTime;
     tracks.forEach(track => {
       if (track.isMuted) return;
-      const clip = track.clips.find(c => c.timelineStart <= currentTime && currentTime <= c.timelineStart + c.duration);
+      const clip = track.clips.find(c => c.timelineStart <= storeTime && storeTime <= c.timelineStart + c.duration);
       if (clip && (clip.type === 'video' || clip.type === 'audio')) {
         const el = document.getElementById(`media-element-${clip.sourceId}`) as HTMLMediaElement;
         if (el && el.paused) {
-          el.volume = Math.max(0, Math.min(1, clip.volume * (track.isMuted ? 0 : 1)));
+          const targetVol = getInterpolatedVolume(clip, storeTime);
+          el.volume = Math.max(0, Math.min(1, targetVol * (track.isMuted ? 0 : 1)));
           el.playbackRate = clip.speed;
           el.play().catch(() => {});
         }
@@ -232,8 +280,9 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
             if (Math.abs(videoEl.currentTime - targetVideoTime) > 0.15) {
               videoEl.currentTime = targetVideoTime;
             }
-            videoEl.muted = track.isMuted || clip.volume === 0;
-            videoEl.volume = Math.max(0, Math.min(1, clip.volume));
+            const targetVol = getInterpolatedVolume(clip, currentTime);
+            videoEl.muted = track.isMuted || targetVol === 0;
+            videoEl.volume = Math.max(0, Math.min(1, targetVol));
           }
 
           const w = clip.type === 'video' ? (mediaEl as HTMLVideoElement).videoWidth : (mediaEl as HTMLImageElement).naturalWidth;

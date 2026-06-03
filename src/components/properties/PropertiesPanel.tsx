@@ -491,6 +491,18 @@ export const PropertiesPanel: React.FC = () => {
               />
             </div>
 
+            {clip.audioKeyframes && clip.audioKeyframes.length > 0 && (
+              <div className="bg-cyan-950/40 border border-cyan-800/30 rounded-md p-2 text-[9px] text-cyan-300 space-y-1.5">
+                <p className="leading-relaxed">El clip contiene puntos clave de volumen (keyframes) en el timeline que sobrescriben el volumen general.</p>
+                <button 
+                  onClick={() => handleUpdate({ audioKeyframes: [] })}
+                  className="w-full bg-cyan-900/30 hover:bg-cyan-900/50 text-cyan-200 border border-cyan-800/40 rounded py-1 transition-colors text-[9px] font-semibold"
+                >
+                  Eliminar todos los puntos clave (Keyframes)
+                </button>
+              </div>
+            )}
+
             {/* EQ Presets (Group C) */}
             <div>
               <label className="text-[10px] text-slate-405">Ecualizador de Audio</label>

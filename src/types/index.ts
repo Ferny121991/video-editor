@@ -71,6 +71,7 @@ export interface Clip {
   textAnimation?: 'none' | 'fade' | 'zoom' | 'slide' | 'typewriter';
   textAnimationDuration?: number;
   lutPreset?: 'none' | 'cinematic' | 'cyberpunk' | 'warm-sunset' | 'cold-winter' | 'sepia' | 'noir';
+  audioKeyframes?: Array<{ id: string; time: number; volume: number }>;
 }
 
 export interface Track {
