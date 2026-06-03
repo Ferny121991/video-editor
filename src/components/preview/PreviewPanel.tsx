@@ -53,6 +53,126 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
     return clip.volume;
   };
 
+  const getInterpolatedProperties = (clip: Clip, time: number) => {
+    const relativeTime = time - clip.timelineStart;
+    
+    // Default base values
+    const baseProperties = {
+      scale: clip.scale,
+      rotation: clip.rotation,
+      opacity: clip.opacity,
+      position: { ...clip.position },
+      effects: clip.effects.map(e => ({ type: e.type, intensity: e.intensity }))
+    };
+
+    const kfs = clip.keyframes || [];
+    if (kfs.length === 0) return baseProperties;
+
+    // Sort keyframes
+    const sortedKfs = [...kfs].sort((a, b) => a.time - b.time);
+
+    // Helper to find bounding keyframes for a visual property
+    const getBounds = (propName: 'scale' | 'rotation' | 'opacity' | 'position') => {
+      // Find all keyframes that define this property
+      const validKfs = sortedKfs.filter(kf => {
+        if (propName === 'position') return kf.position !== undefined;
+        return (kf as any)[propName] !== undefined;
+      });
+
+      if (validKfs.length === 0) return null;
+
+      // If time is before the first keyframe specifying this property
+      if (relativeTime <= validKfs[0].time) {
+        return { start: validKfs[0], end: validKfs[0], t: 0 };
+      }
+
+      // If time is after the last keyframe specifying this property
+      if (relativeTime >= validKfs[validKfs.length - 1].time) {
+        return { start: validKfs[validKfs.length - 1], end: validKfs[validKfs.length - 1], t: 0 };
+      }
+
+      // Find the two keyframes wrapping relativeTime
+      for (let i = 0; i < validKfs.length - 1; i++) {
+        const startKf = validKfs[i];
+        const endKf = validKfs[i + 1];
+        if (relativeTime >= startKf.time && relativeTime <= endKf.time) {
+          const t = (relativeTime - startKf.time) / (endKf.time - startKf.time);
+          return { start: startKf, end: endKf, t };
+        }
+      }
+      return null;
+    };
+
+    // Interpolate position
+    const posBounds = getBounds('position');
+    if (posBounds) {
+      const { start, end, t } = posBounds;
+      if (start.position && end.position) {
+        baseProperties.position.x = start.position.x + t * (end.position.x - start.position.x);
+        baseProperties.position.y = start.position.y + t * (end.position.y - start.position.y);
+      }
+    }
+
+    // Interpolate scale
+    const scaleBounds = getBounds('scale');
+    if (scaleBounds) {
+      const { start, end, t } = scaleBounds;
+      if (start.scale !== undefined && end.scale !== undefined) {
+        baseProperties.scale = start.scale + t * (end.scale - start.scale);
+      }
+    }
+
+    // Interpolate rotation
+    const rotBounds = getBounds('rotation');
+    if (rotBounds) {
+      const { start, end, t } = rotBounds;
+      if (start.rotation !== undefined && end.rotation !== undefined) {
+        baseProperties.rotation = start.rotation + t * (end.rotation - start.rotation);
+      }
+    }
+
+    // Interpolate opacity
+    const opBounds = getBounds('opacity');
+    if (opBounds) {
+      const { start, end, t } = opBounds;
+      if (start.opacity !== undefined && end.opacity !== undefined) {
+        baseProperties.opacity = start.opacity + t * (end.opacity - start.opacity);
+      }
+    }
+
+    // Interpolate effect intensities (for effects like blur, glitch, vignette, film-grain)
+    baseProperties.effects = baseProperties.effects.map(eff => {
+      // Find keyframes defining this effect
+      const effectKfs = sortedKfs.filter(kf => kf.effects?.some(e => e.type === eff.type));
+      if (effectKfs.length === 0) return eff;
+
+      const getEffIntensity = (kf: any) => 
+        kf.effects?.find((e: any) => e.type === eff.type)?.intensity ?? eff.intensity;
+
+      if (relativeTime <= effectKfs[0].time) {
+        return { type: eff.type, intensity: getEffIntensity(effectKfs[0]) };
+      }
+
+      if (relativeTime >= effectKfs[effectKfs.length - 1].time) {
+        return { type: eff.type, intensity: getEffIntensity(effectKfs[effectKfs.length - 1]) };
+      }
+
+      for (let i = 0; i < effectKfs.length - 1; i++) {
+        const startKf = effectKfs[i];
+        const endKf = effectKfs[i + 1];
+        if (relativeTime >= startKf.time && relativeTime <= endKf.time) {
+          const t = (relativeTime - startKf.time) / (endKf.time - startKf.time);
+          const startVal = getEffIntensity(startKf);
+          const endVal = getEffIntensity(endKf);
+          return { type: eff.type, intensity: startVal + t * (endVal - startVal) };
+        }
+      }
+      return eff;
+    });
+
+    return baseProperties;
+  };
+
   const updateActiveMediaVolumes = (time: number) => {
     tracks.forEach(track => {
       const clip = track.clips.find(c => c.timelineStart <= time && time <= c.timelineStart + c.duration);
@@ -192,8 +312,11 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
 
       ctx.save();
 
+      // Get interpolated visual properties from keyframes
+      const interpolated = getInterpolatedProperties(clip, currentTime);
+
       // Configure general alpha opacity
-      let alpha = clip.opacity;
+      let alpha = interpolated.opacity;
 
       // Group B: Transitions implementation
       const activeFadeIn = clip.transitions.find(t => t.type === 'fade');
@@ -235,8 +358,9 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
       }
 
       // Visual Effects (Group A)
-      const blurVal = clip.effects.find(e => e.type === 'blur' && e.enabled)?.intensity || 0;
-      if (blurVal > 0) {
+      const blurVal = interpolated.effects.find(e => e.type === 'blur')?.intensity ?? 0;
+      const isBlurEnabled = clip.effects.find(e => e.type === 'blur')?.enabled ?? false;
+      if (isBlurEnabled && blurVal > 0) {
         filterString += ` blur(${blurVal * 15}px)`;
       }
 
@@ -245,18 +369,19 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
       // Camera Shake Effect
       let shakeX = 0;
       let shakeY = 0;
-      const shakeVal = clip.effects.find(e => e.type === 'glitch' && e.enabled)?.intensity || 0; // camera shake mapped to glitch
-      if (shakeVal > 0 && isPlaying) {
+      const shakeVal = interpolated.effects.find(e => e.type === 'glitch')?.intensity ?? 0; // camera shake mapped to glitch
+      const isShakeEnabled = clip.effects.find(e => e.type === 'glitch')?.enabled ?? false;
+      if (isShakeEnabled && shakeVal > 0 && isPlaying) {
         shakeX = (Math.random() - 0.5) * shakeVal * 30;
         shakeY = (Math.random() - 0.5) * shakeVal * 30;
       }
 
       // Translate coordinates to center
-      ctx.translate(canvas.width / 2 + clip.position.x + shakeX, canvas.height / 2 + clip.position.y + shakeY);
-      ctx.rotate((clip.rotation * Math.PI) / 180);
+      ctx.translate(canvas.width / 2 + interpolated.position.x + shakeX, canvas.height / 2 + interpolated.position.y + shakeY);
+      ctx.rotate((interpolated.rotation * Math.PI) / 180);
       
       // Zoom transitions scale modification
-      let customScale = clip.scale;
+      let customScale = interpolated.scale;
       const activeZoomIn = clip.transitions.find(t => t.type === 'zoom-in');
       if (activeZoomIn) {
         const timeInClip = currentTime - clip.timelineStart;
@@ -302,8 +427,9 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
             ctx.drawImage(mediaEl, -drawW / 2, -drawH / 2, drawW, drawH);
 
             // Visual Vignette Effect (Group A)
-            const vignetteVal = clip.effects.find(e => e.type === 'vignette' && e.enabled)?.intensity || 0;
-            if (vignetteVal > 0) {
+            const vignetteVal = interpolated.effects.find(e => e.type === 'vignette')?.intensity ?? 0;
+            const isVignetteEnabled = clip.effects.find(e => e.type === 'vignette')?.enabled ?? false;
+            if (isVignetteEnabled && vignetteVal > 0) {
               const grad = ctx.createRadialGradient(0, 0, drawW * 0.25, 0, 0, drawW * 0.7);
               grad.addColorStop(0, 'transparent');
               grad.addColorStop(1, `rgba(0,0,0,${vignetteVal * 0.85})`);
@@ -312,8 +438,9 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
             }
 
             // Visual Film Grain Effect (Group A)
-            const grainVal = clip.effects.find(e => e.type === 'film-grain' && e.enabled)?.intensity || 0;
-            if (grainVal > 0) {
+            const grainVal = interpolated.effects.find(e => e.type === 'film-grain')?.intensity ?? 0;
+            const isGrainEnabled = clip.effects.find(e => e.type === 'film-grain')?.enabled ?? false;
+            if (isGrainEnabled && grainVal > 0) {
               ctx.fillStyle = `rgba(255,255,255,${grainVal * 0.15})`;
               for (let d = 0; d < 200; d++) {
                 const dotX = (Math.random() - 0.5) * drawW;

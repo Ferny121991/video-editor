@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useProjectStore } from '../../store/projectStore';
-import type { Track, Clip, MediaType, MediaItem } from '../../types';
+import type { Track, Clip, MediaType, MediaItem, PropertyKeyframe } from '../../types';
 import { 
   Scissors, Trash2, Copy, ZoomIn, ZoomOut, 
   Lock, Unlock, Volume2, VolumeX, Eye, EyeOff, Plus
@@ -12,7 +12,8 @@ export const Timeline: React.FC = () => {
     setCurrentTime, setZoomLevel, setSelectedClipId, splitClip, 
     duplicateClip, removeClip, updateClip, addTrack, addMediaItem, addClipToTrack,
     toggleLockTrack, toggleMuteTrack, toggleHideTrack, detachAudio,
-    addAudioKeyframe, updateAudioKeyframe, removeAudioKeyframe
+    addAudioKeyframe, updateAudioKeyframe, removeAudioKeyframe,
+    updatePropertyKeyframe, removePropertyKeyframe
   } = useProjectStore();
 
   const rulerRef = useRef<HTMLDivElement>(null);
@@ -133,13 +134,70 @@ export const Timeline: React.FC = () => {
     window.addEventListener('mouseup', handleMouseUp);
   };
 
-  // Handle click on timeline ruler to seek playhead
-  const handleRulerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  // Handle click-and-drag on timeline ruler to seek playhead continuously (scrubbing)
+  const handleRulerMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!rulerRef.current) return;
-    const rect = rulerRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left + rulerRef.current.scrollLeft;
-    const clickedTime = clickX / zoomLevel;
-    setCurrentTime(clickedTime);
+
+    const seekToPosition = (clientX: number) => {
+      if (!rulerRef.current) return;
+      const rect = rulerRef.current.getBoundingClientRect();
+      const clickX = clientX - rect.left + rulerRef.current.scrollLeft;
+      const clickedTime = Math.max(0, Math.min(duration, clickX / zoomLevel));
+      setCurrentTime(clickedTime);
+    };
+
+    seekToPosition(e.clientX);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      seekToPosition(moveEvent.clientX);
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  // Prop keyframe mouse drag handler
+  const handlePropKeyframeMouseDown = (
+    e: React.MouseEvent,
+    clipId: string,
+    kf: PropertyKeyframe
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const startX = e.clientX;
+    const initialTime = kf.time;
+
+    const clipContainer = document.getElementById(`clip-container-${clipId}`);
+    if (!clipContainer) return;
+
+    const rect = clipContainer.getBoundingClientRect();
+    const clipWidth = rect.width;
+
+    const clip = tracks.flatMap(t => t.clips).find(c => c.id === clipId);
+    if (!clip) return;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const timeDelta = (deltaX / clipWidth) * clip.duration;
+      let newTime = initialTime + timeDelta;
+      newTime = Math.max(0, Math.min(clip.duration, newTime));
+
+      updatePropertyKeyframe(clipId, kf.id, { time: newTime });
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
   };
 
   // Timeline Scroll Zoom Handler (Ctrl + Scroll)
@@ -148,6 +206,9 @@ export const Timeline: React.FC = () => {
       e.preventDefault();
       const zoomDelta = e.deltaY < 0 ? 5 : -5;
       setZoomLevel(zoomLevel + zoomDelta);
+    } else {
+      // Horizontal scroll with scrollwheel
+      e.currentTarget.scrollLeft += e.deltaY;
     }
   };
 
@@ -305,10 +366,44 @@ export const Timeline: React.FC = () => {
     });
   };
 
-  // Desktop drag and drop directly onto a track board
+  // Desktop/Library drag and drop directly onto a track board
   const handleTrackDrop = async (e: React.DragEvent, track: Track) => {
     e.preventDefault();
     if (track.isLocked) return;
+
+    const libraryItemId = e.dataTransfer.getData('mediaItemId');
+    if (libraryItemId) {
+      const libraryItem = media.find(m => m.id === libraryItemId);
+      if (!libraryItem) return;
+
+      const rect = e.currentTarget.getBoundingClientRect();
+      const dropX = e.clientX - rect.left + e.currentTarget.scrollLeft;
+      const dropTime = Math.max(0, dropX / zoomLevel);
+
+      const clipDuration = libraryItem.type === 'image' ? 5 : libraryItem.duration;
+
+      addClipToTrack(track.id, {
+        id: `clip_${Date.now()}`,
+        type: libraryItem.type,
+        sourceId: libraryItem.id,
+        startTime: 0,
+        endTime: clipDuration,
+        timelineStart: dropTime,
+        duration: clipDuration,
+        position: { x: 0, y: 0 },
+        scale: 1,
+        rotation: 0,
+        opacity: 1,
+        volume: 1,
+        speed: 1,
+        colorFilters: { brightness: 1, contrast: 1, saturation: 1 },
+        effects: [],
+        transitions: [],
+        audioFadeIn: 0,
+        audioFadeOut: 0
+      });
+      return;
+    }
 
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
@@ -549,7 +644,7 @@ export const Timeline: React.FC = () => {
           {/* Ruler */}
           <div 
             ref={rulerRef}
-            onClick={handleRulerClick}
+            onMouseDown={handleRulerMouseDown}
             className="h-8 border-b border-slate-850 bg-slate-900/50 sticky top-0 cursor-ew-resize z-10 select-none overflow-hidden"
           >
             <div className="relative h-full" style={{ width: `${Math.max(duration + 10, 30) * zoomLevel}px` }}>
@@ -667,7 +762,7 @@ export const Timeline: React.FC = () => {
                               key={kf.id}
                               className="absolute w-2 h-2 rounded-full bg-cyan-400 border border-white cursor-ns-resize -ml-1 -mt-1 hover:bg-white z-30 pointer-events-auto shadow shadow-black"
                               style={{
-                                left: `${(kf.time / clip.duration) * 100}%`,
+                                  left: `${(kf.time / clip.duration) * 100}%`,
                                 top: `${(1 - (kf.volume / 1.5)) * 100}%`
                               }}
                               onMouseDown={(e) => handleKeyframeMouseDown(e, clip.id, kf)}
@@ -676,6 +771,67 @@ export const Timeline: React.FC = () => {
                                 removeAudioKeyframe(clip.id, kf.id);
                               }}
                               title={`Volumen: ${Math.round(kf.volume * 100)}% a los ${kf.time.toFixed(1)}s (Doble clic para borrar)`}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Filmora-style direct volume line drag (when no keyframes exist) */}
+                      {track.type === 'audio' && (!clip.audioKeyframes || clip.audioKeyframes.length === 0) && (
+                        <div 
+                          className="absolute left-0 right-0 h-1.5 bg-cyan-400/40 hover:bg-cyan-400 cursor-ns-resize z-20 transition-all pointer-events-auto"
+                          style={{
+                            top: `${(1 - ((clip.volume ?? 1) / 1.5)) * 100}%`,
+                            marginTop: '-3px'
+                          }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            
+                            const startY = e.clientY;
+                            const initialVol = clip.volume ?? 1;
+                            
+                            const clipContainer = document.getElementById(`clip-container-${clip.id}`);
+                            if (!clipContainer) return;
+                            
+                            const clipHeight = clipContainer.getBoundingClientRect().height;
+                            
+                            const handleMouseMove = (moveEvent: MouseEvent) => {
+                              const deltaY = moveEvent.clientY - startY;
+                              const volDelta = -(deltaY / clipHeight) * 1.5;
+                              let newVol = initialVol + volDelta;
+                              newVol = Math.max(0, Math.min(1.5, newVol));
+                              updateClip(clip.id, { volume: newVol });
+                            };
+                            
+                            const handleMouseUp = () => {
+                              window.removeEventListener('mousemove', handleMouseMove);
+                              window.removeEventListener('mouseup', handleMouseUp);
+                            };
+                            
+                            window.addEventListener('mousemove', handleMouseMove);
+                            window.addEventListener('mouseup', handleMouseUp);
+                          }}
+                          title={`Volumen base: ${Math.round((clip.volume ?? 1) * 100)}% (Arrastra arriba/abajo para cambiar)`}
+                        />
+                      )}
+
+                      {/* Visual property keyframes - diamond markers */}
+                      {isSelected && clip.keyframes && clip.keyframes.length > 0 && (
+                        <div className="absolute bottom-0 left-0 right-0 h-2 bg-slate-900/60 flex items-center pointer-events-none z-20">
+                          {clip.keyframes.map(kf => (
+                            <div
+                              key={kf.id}
+                              className="absolute w-2 h-2 bg-cyan-400 rotate-45 border border-white cursor-ew-resize -ml-1 pointer-events-auto hover:bg-white z-30 transition-colors shadow shadow-black"
+                              style={{
+                                left: `${(kf.time / clip.duration) * 100}%`
+                              }}
+                              onMouseDown={(e) => handlePropKeyframeMouseDown(e, clip.id, kf)}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                removePropertyKeyframe(clip.id, kf.id);
+                              }}
+                              title={`Keyframe visual a los ${kf.time.toFixed(1)}s (Doble clic para borrar)`}
                             />
                           ))}
                         </div>

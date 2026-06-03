@@ -72,6 +72,17 @@ export interface Clip {
   textAnimationDuration?: number;
   lutPreset?: 'none' | 'cinematic' | 'cyberpunk' | 'warm-sunset' | 'cold-winter' | 'sepia' | 'noir';
   audioKeyframes?: Array<{ id: string; time: number; volume: number }>;
+  keyframes?: PropertyKeyframe[];
+}
+
+export interface PropertyKeyframe {
+  id: string;
+  time: number; // relative time inside the clip (seconds)
+  scale?: number;
+  rotation?: number;
+  opacity?: number;
+  position?: { x: number; y: number };
+  effects?: Array<{ type: string; intensity: number }>;
 }
 
 export interface Track {

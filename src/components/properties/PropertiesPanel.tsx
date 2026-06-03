@@ -5,7 +5,10 @@ import {
 } from 'lucide-react';
 
 export const PropertiesPanel: React.FC = () => {
-  const { selectedClipId, tracks, updateClip } = useProjectStore();
+  const { 
+    selectedClipId, tracks, updateClip,
+    addPropertyKeyframe, removePropertyKeyframe, currentTime
+  } = useProjectStore();
   
   // Find selected clip
   const clip = tracks.flatMap(t => t.clips).find(c => c.id === selectedClipId);
@@ -18,6 +21,55 @@ export const PropertiesPanel: React.FC = () => {
       </div>
     );
   }
+
+  const relativeTime = currentTime - clip.timelineStart;
+
+  const hasKeyframeFor = (propName: string, subEffectType?: string) => {
+    if (!clip.keyframes) return false;
+    const kf = clip.keyframes.find(k => Math.abs(k.time - relativeTime) < 0.15);
+    if (!kf) return false;
+    
+    if (subEffectType) {
+      return kf.effects?.some(e => e.type === subEffectType) ?? false;
+    }
+    return (kf as any)[propName] !== undefined;
+  };
+  
+  const handleTogglePropKeyframe = (propName: string, value: any, subEffectType?: string) => {
+    const isKeyframed = hasKeyframeFor(propName, subEffectType);
+    if (isKeyframed) {
+      const kf = clip.keyframes?.find(k => Math.abs(k.time - relativeTime) < 0.15);
+      if (kf) {
+        removePropertyKeyframe(clip.id, kf.id);
+      }
+    } else {
+      if (subEffectType) {
+        const currentEffIntensity = clip.effects.find(e => e.type === subEffectType)?.intensity || 0.5;
+        addPropertyKeyframe(clip.id, Math.max(0, relativeTime), {
+          effects: [{ type: subEffectType, intensity: currentEffIntensity }]
+        });
+      } else {
+        addPropertyKeyframe(clip.id, Math.max(0, relativeTime), {
+          [propName]: value
+        });
+      }
+    }
+  };
+
+  const renderKeyframeIndicator = (propName: string, currentValue: any, subEffectType?: string) => {
+    const active = hasKeyframeFor(propName, subEffectType);
+    return (
+      <button
+        onClick={() => handleTogglePropKeyframe(propName, currentValue, subEffectType)}
+        className={`p-0.5 rounded transition-all hover:bg-slate-800 focus:outline-none ${
+          active ? 'text-cyan-400 scale-110' : 'text-slate-500 hover:text-slate-300'
+        }`}
+        title={active ? "Eliminar punto clave (Keyframe)" : "Añadir punto clave (Keyframe)"}
+      >
+        <span className="text-xs">◆</span>
+      </button>
+    );
+  };
 
   const handleUpdate = (updates: any) => {
     updateClip(clip.id, updates);
@@ -156,76 +208,93 @@ export const PropertiesPanel: React.FC = () => {
       <div className="p-4 space-y-5">
         
         {/* Transform / Layout (for Video/Image/Text) */}
-        <div className="space-y-3">
-          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-800 pb-1">
-            <Move size={12} /> Transformación
-          </h4>
-          
-          <div className="grid grid-cols-2 gap-2">
+        {clip.type !== 'audio' && (
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-800 pb-1">
+              <span className="flex items-center gap-1.5"><Move size={12} /> Transformación</span>
+            </h4>
+            
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-[10px] text-slate-405 flex items-center justify-between">
+                  Posición X
+                  {renderKeyframeIndicator('position', clip.position)}
+                </span>
+                <input
+                  type="number"
+                  value={clip.position.x}
+                  onChange={(e) => handleUpdate({ position: { ...clip.position, x: parseInt(e.target.value) || 0 } })}
+                  className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none"
+                />
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-405 flex items-center justify-between">
+                  Posición Y
+                  {renderKeyframeIndicator('position', clip.position)}
+                </span>
+                <input
+                  type="number"
+                  value={clip.position.y}
+                  onChange={(e) => handleUpdate({ position: { ...clip.position, y: parseInt(e.target.value) || 0 } })}
+                  className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none"
+                />
+              </div>
+            </div>
+
             <div>
-              <label className="text-[10px] text-slate-405">Posición X</label>
+              <div className="flex justify-between text-[10px] items-center">
+                <span className="text-slate-405 flex items-center gap-1">
+                  Escala ({(clip.scale * 100).toFixed(0)}%)
+                  {renderKeyframeIndicator('scale', clip.scale)}
+                </span>
+                <button onClick={() => handleUpdate({ scale: 1 })} className="text-[8px] text-indigo-400 hover:underline">Reset</button>
+              </div>
               <input
-                type="number"
-                value={clip.position.x}
-                onChange={(e) => handleUpdate({ position: { ...clip.position, x: parseInt(e.target.value) || 0 } })}
-                className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none"
+                type="range"
+                min="0.1"
+                max="3"
+                step="0.05"
+                value={clip.scale}
+                onChange={(e) => handleUpdate({ scale: parseFloat(e.target.value) })}
+                className="mt-1 w-full accent-indigo-500"
               />
             </div>
+
             <div>
-              <label className="text-[10px] text-slate-405">Posición Y</label>
+              <div className="flex justify-between text-[10px] items-center">
+                <span className="text-slate-450 flex items-center gap-1">
+                  Rotación ({clip.rotation}°)
+                  {renderKeyframeIndicator('rotation', clip.rotation)}
+                </span>
+                <button onClick={() => handleUpdate({ rotation: 0 })} className="text-[8px] text-indigo-400 hover:underline">Reset</button>
+              </div>
               <input
-                type="number"
-                value={clip.position.y}
-                onChange={(e) => handleUpdate({ position: { ...clip.position, y: parseInt(e.target.value) || 0 } })}
-                className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none"
+                type="range"
+                min="0"
+                max="360"
+                value={clip.rotation}
+                onChange={(e) => handleUpdate({ rotation: parseInt(e.target.value) })}
+                className="mt-1 w-full accent-indigo-500"
+              />
+            </div>
+
+            <div>
+              <span className="text-[10px] text-slate-405 flex items-center gap-1">
+                Opacidad ({(clip.opacity * 100).toFixed(0)}%)
+                {renderKeyframeIndicator('opacity', clip.opacity)}
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={clip.opacity}
+                onChange={(e) => handleUpdate({ opacity: parseFloat(e.target.value) })}
+                className="mt-1 w-full accent-indigo-500"
               />
             </div>
           </div>
-
-          <div>
-            <div className="flex justify-between text-[10px]">
-              <span className="text-slate-405">Escala ({(clip.scale * 100).toFixed(0)}%)</span>
-              <button onClick={() => handleUpdate({ scale: 1 })} className="text-[8px] text-indigo-400 hover:underline">Reset</button>
-            </div>
-            <input
-              type="range"
-              min="0.1"
-              max="3"
-              step="0.05"
-              value={clip.scale}
-              onChange={(e) => handleUpdate({ scale: parseFloat(e.target.value) })}
-              className="mt-1 w-full accent-indigo-500"
-            />
-          </div>
-
-          <div>
-            <div className="flex justify-between text-[10px]">
-              <span className="text-slate-450">Rotación ({clip.rotation}°)</span>
-              <button onClick={() => handleUpdate({ rotation: 0 })} className="text-[8px] text-indigo-400 hover:underline">Reset</button>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="360"
-              value={clip.rotation}
-              onChange={(e) => handleUpdate({ rotation: parseInt(e.target.value) })}
-              className="mt-1 w-full accent-indigo-500"
-            />
-          </div>
-
-          <div>
-            <span className="text-[10px] text-slate-405">Opacidad ({(clip.opacity * 100).toFixed(0)}%)</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={clip.opacity}
-              onChange={(e) => handleUpdate({ opacity: parseFloat(e.target.value) })}
-              className="mt-1 w-full accent-indigo-500"
-            />
-          </div>
-        </div>
+        )}
 
         {/* Text Configuration (Only if selected clip is type 'text') */}
         {clip.type === 'text' && clip.textConfig && (
@@ -660,7 +729,10 @@ export const PropertiesPanel: React.FC = () => {
             {/* Blur effect */}
             <div className="space-y-1">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-350">Desfoque Gaussian (Blur)</span>
+                <span className="text-slate-350 flex items-center gap-1">
+                  Desfoque Gaussian (Blur)
+                  {renderKeyframeIndicator('effects', null, 'blur')}
+                </span>
                 <input
                   type="checkbox"
                   checked={isEffectEnabled('blur')}
@@ -684,7 +756,10 @@ export const PropertiesPanel: React.FC = () => {
             {/* Shake effect */}
             <div className="space-y-1 mt-2">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-350">Movimiento de Cámara (Shake)</span>
+                <span className="text-slate-350 flex items-center gap-1">
+                  Movimiento de Cámara (Shake)
+                  {renderKeyframeIndicator('effects', null, 'glitch')}
+                </span>
                 <input
                   type="checkbox"
                   checked={isEffectEnabled('glitch')} // Camera shake mapped to glitch in rendering
@@ -708,7 +783,10 @@ export const PropertiesPanel: React.FC = () => {
             {/* Vignette effect */}
             <div className="space-y-1 mt-2">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-350">Viñeta (Vignette Shadow)</span>
+                <span className="text-slate-350 flex items-center gap-1">
+                  Viñeta (Vignette Shadow)
+                  {renderKeyframeIndicator('effects', null, 'vignette')}
+                </span>
                 <input
                   type="checkbox"
                   checked={isEffectEnabled('vignette')}
@@ -732,7 +810,10 @@ export const PropertiesPanel: React.FC = () => {
             {/* Film Grain effect */}
             <div className="space-y-1 mt-2">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-350">Grano de Película (Film Grain)</span>
+                <span className="text-slate-350 flex items-center gap-1">
+                  Grano de Película (Film Grain)
+                  {renderKeyframeIndicator('effects', null, 'film-grain')}
+                </span>
                 <input
                   type="checkbox"
                   checked={isEffectEnabled('film-grain')}

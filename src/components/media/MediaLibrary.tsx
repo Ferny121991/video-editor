@@ -367,7 +367,12 @@ export const MediaLibrary: React.FC = () => {
             {filteredMedia.map(item => (
               <div 
                 key={item.id}
-                className="group relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950 p-1.5 transition-all hover:border-indigo-500/50"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('mediaItemId', item.id);
+                  e.dataTransfer.setData('mediaItemType', item.type);
+                }}
+                className="group relative overflow-hidden rounded-lg border border-slate-800 bg-slate-955 p-1.5 transition-all hover:border-indigo-500/50 cursor-grab active:cursor-grabbing"
               >
                 {/* Media Thumbnail */}
                 <div className="relative aspect-video w-full overflow-hidden rounded bg-slate-900">

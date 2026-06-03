@@ -5,6 +5,8 @@ import { PropertiesPanel } from '../properties/PropertiesPanel';
 import { Timeline } from '../timeline/Timeline';
 import { PreviewPanel } from '../preview/PreviewPanel';
 import { AiTools } from '../ai/AiTools';
+import { EffectsLibrary } from '../effects/EffectsLibrary';
+import { TransitionsLibrary } from '../transitions/TransitionsLibrary';
 import { SettingsModal } from '../settings/SettingsModal';
 import { ExportModal } from '../export/ExportModal';
 import { 
@@ -21,7 +23,7 @@ export const Layout: React.FC<LayoutProps> = ({ canvasRef }) => {
     projectName, undo, redo, loadProject, saveProject, newProject
   } = useProjectStore();
 
-  const [activeLeftPanel, setActiveLeftPanel] = useState<'media' | 'ai'>('media');
+  const [activeLeftPanel, setActiveLeftPanel] = useState<'media' | 'ai' | 'effects' | 'transitions'>('media');
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
 
@@ -182,32 +184,59 @@ export const Layout: React.FC<LayoutProps> = ({ canvasRef }) => {
       {/* 2. MAIN CONTENT AREA */}
       <main className="flex flex-1 w-full overflow-hidden select-none">
         
-        {/* Left Side: Media Library or AI Tools */}
+        {/* Left Side: Media Library, Effects, Transitions, or AI Tools */}
         <section className="w-80 h-full border-r border-slate-900 flex-shrink-0 flex flex-col bg-slate-900">
           <div className="flex border-b border-slate-850 bg-slate-950/20">
             <button
               onClick={() => setActiveLeftPanel('media')}
-              className={`flex-1 text-center py-2 text-xs font-semibold transition-all border-b-2 ${
+              className={`flex-1 text-center py-2 text-[10px] sm:text-xs font-semibold transition-all border-b-2 ${
                 activeLeftPanel === 'media' 
                   ? 'text-indigo-400 border-indigo-500 bg-slate-850/30' 
                   : 'text-slate-400 border-transparent hover:text-slate-200'
               }`}
+              title="Biblioteca de medios importados"
             >
               Medios
             </button>
             <button
+              onClick={() => setActiveLeftPanel('effects')}
+              className={`flex-1 text-center py-2 text-[10px] sm:text-xs font-semibold transition-all border-b-2 ${
+                activeLeftPanel === 'effects' 
+                  ? 'text-indigo-400 border-indigo-500 bg-slate-850/30' 
+                  : 'text-slate-400 border-transparent hover:text-slate-200'
+              }`}
+              title="Galería de efectos y filtros (LUTs)"
+            >
+              Efectos
+            </button>
+            <button
+              onClick={() => setActiveLeftPanel('transitions')}
+              className={`flex-1 text-center py-2 text-[10px] sm:text-xs font-semibold transition-all border-b-2 ${
+                activeLeftPanel === 'transitions' 
+                  ? 'text-indigo-400 border-indigo-500 bg-slate-850/30' 
+                  : 'text-slate-400 border-transparent hover:text-slate-200'
+              }`}
+              title="Efectos de transición de entrada/salida"
+            >
+              Transiciones
+            </button>
+            <button
               onClick={() => setActiveLeftPanel('ai')}
-              className={`flex-1 text-center py-2 text-xs font-semibold transition-all border-b-2 ${
+              className={`flex-1 text-center py-2 text-[10px] sm:text-xs font-semibold transition-all border-b-2 ${
                 activeLeftPanel === 'ai' 
                   ? 'text-indigo-400 border-indigo-500 bg-slate-850/30' 
                   : 'text-slate-400 border-transparent hover:text-slate-200'
               }`}
+              title="Herramientas IA y asistente"
             >
               Asistente IA
             </button>
           </div>
           <div className="flex-1 overflow-hidden">
-            {activeLeftPanel === 'media' ? <MediaLibrary /> : <AiTools />}
+            {activeLeftPanel === 'media' && <MediaLibrary />}
+            {activeLeftPanel === 'effects' && <EffectsLibrary />}
+            {activeLeftPanel === 'transitions' && <TransitionsLibrary />}
+            {activeLeftPanel === 'ai' && <AiTools />}
           </div>
         </section>
 

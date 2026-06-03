@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { MediaItem, Track, Clip, Subtitle, AIConfig, ProjectSettings } from '../types';
+import type { MediaItem, Track, Clip, Subtitle, AIConfig, ProjectSettings, PropertyKeyframe } from '../types';
 
 interface ProjectState {
   // Project Info
@@ -55,6 +55,9 @@ interface ProjectState {
   addAudioKeyframe: (clipId: string, time: number, volume: number) => void;
   updateAudioKeyframe: (clipId: string, keyframeId: string, updates: Partial<{ time: number; volume: number }>) => void;
   removeAudioKeyframe: (clipId: string, keyframeId: string) => void;
+  addPropertyKeyframe: (clipId: string, time: number, properties: Partial<PropertyKeyframe>) => void;
+  updatePropertyKeyframe: (clipId: string, keyframeId: string, updates: Partial<PropertyKeyframe>) => void;
+  removePropertyKeyframe: (clipId: string, keyframeId: string) => void;
   
   // Subtitle actions
   addSubtitle: (sub: Subtitle) => void;
@@ -516,6 +519,77 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             return {
               ...clip,
               audioKeyframes: clip.audioKeyframes.filter(kf => kf.id !== keyframeId)
+            };
+          }
+          return clip;
+        })
+      };
+    });
+    return { tracks: updatedTracks };
+  }),
+
+  addPropertyKeyframe: (clipId, time, properties) => set((state) => {
+    const updatedTracks = state.tracks.map(track => {
+      if (track.isLocked) return track;
+      return {
+        ...track,
+        clips: track.clips.map(clip => {
+          if (clip.id === clipId) {
+            const currentKfs = clip.keyframes || [];
+            const existingIndex = currentKfs.findIndex(k => Math.abs(k.time - time) < 0.05);
+            let newKfs;
+            if (existingIndex !== -1) {
+              newKfs = currentKfs.map((k, idx) => idx === existingIndex ? { ...k, ...properties } : k);
+            } else {
+              const newKf = {
+                id: `kf_prop_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                time,
+                ...properties
+              } as PropertyKeyframe;
+              newKfs = [...currentKfs, newKf];
+            }
+            return {
+              ...clip,
+              keyframes: newKfs.sort((a, b) => a.time - b.time)
+            };
+          }
+          return clip;
+        })
+      };
+    });
+    return { tracks: updatedTracks };
+  }),
+
+  updatePropertyKeyframe: (clipId, keyframeId, updates) => set((state) => {
+    const updatedTracks = state.tracks.map(track => {
+      if (track.isLocked) return track;
+      return {
+        ...track,
+        clips: track.clips.map(clip => {
+          if (clip.id === clipId && clip.keyframes) {
+            return {
+              ...clip,
+              keyframes: clip.keyframes.map(k => k.id === keyframeId ? { ...k, ...updates } : k).sort((a, b) => a.time - b.time)
+            };
+          }
+          return clip;
+        })
+      };
+    });
+    return { tracks: updatedTracks };
+  }),
+
+  removePropertyKeyframe: (clipId, keyframeId) => set((state) => {
+    pushToHistory(state.tracks, state.subtitles);
+    const updatedTracks = state.tracks.map(track => {
+      if (track.isLocked) return track;
+      return {
+        ...track,
+        clips: track.clips.map(clip => {
+          if (clip.id === clipId && clip.keyframes) {
+            return {
+              ...clip,
+              keyframes: clip.keyframes.filter(k => k.id !== keyframeId)
             };
           }
           return clip;
