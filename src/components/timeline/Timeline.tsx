@@ -38,30 +38,38 @@ export const Timeline: React.FC = () => {
     return () => window.removeEventListener('click', closeMenu);
   }, []);
 
+  const currentTimeRef = useRef(currentTime);
+  const selectedClipIdRef = useRef(selectedClipId);
+
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+    selectedClipIdRef.current = selectedClipId;
+  }, [currentTime, selectedClipId]);
+
   // Keyboard shortcuts listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       if (e.key.toLowerCase() === 's') {
-        if (selectedClipId) {
-          splitClip(selectedClipId, currentTime);
+        if (selectedClipIdRef.current) {
+          splitClip(selectedClipIdRef.current, currentTimeRef.current);
         }
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedClipId) {
-          removeClip(selectedClipId);
+        if (selectedClipIdRef.current) {
+          removeClip(selectedClipIdRef.current);
         }
       } else if (e.key === 'd' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (selectedClipId) {
-          duplicateClip(selectedClipId);
+        if (selectedClipIdRef.current) {
+          duplicateClip(selectedClipIdRef.current);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedClipId, currentTime]);
+  }, []);
 
   // Filmora-style Audio volume envelope keyframe helpers
   const getKeyframePathPoints = (clip: Clip) => {

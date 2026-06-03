@@ -295,8 +295,10 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width = resolution.width;
-    canvas.height = resolution.height;
+    if (canvas.width !== resolution.width || canvas.height !== resolution.height) {
+      canvas.width = resolution.width;
+      canvas.height = resolution.height;
+    }
 
     // 1. Draw solid background
     ctx.fillStyle = '#020617';
@@ -402,7 +404,8 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({ canvasRef }) => {
             const relTime = currentTime - clip.timelineStart;
             const targetVideoTime = clip.startTime + (relTime * clip.speed);
             
-            if (Math.abs(videoEl.currentTime - targetVideoTime) > 0.15) {
+            const driftThreshold = isPlaying ? 0.5 : 0.05;
+            if (Math.abs(videoEl.currentTime - targetVideoTime) > driftThreshold) {
               videoEl.currentTime = targetVideoTime;
             }
             const targetVol = getInterpolatedVolume(clip, currentTime);
